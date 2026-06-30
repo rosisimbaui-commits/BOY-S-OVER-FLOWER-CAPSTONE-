@@ -134,6 +134,9 @@ $flash = getFlash();
                 <input type="password" name="password" required placeholder="Your password">
             </div>
             <button type="submit" class="btn btn-primary">Continue →</button>
+            <div style="text-align: center; margin-top: 15px;">
+              <a href="forgot-password.php" class="link" style="font-size: 0.85rem;">Forgot password?</a>
+            </div>
         </form>
         <hr class="divider">
         <p class="text-sm text-muted" style="text-align:center">
