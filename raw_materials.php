@@ -1,4 +1,4 @@
-<?php
+ <?php
 // 1. Database Connection & Requirements
 require_once '../includes/db.php';
 requireUserLogin(); 
