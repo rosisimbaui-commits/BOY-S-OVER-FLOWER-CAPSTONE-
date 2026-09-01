@@ -19,7 +19,9 @@ $user['full_name'] = decryptData($user['full_name']);
 $user['phone']     = decryptData($user['phone']);
 $user['address']   = decryptData($user['address']);
 
+// -------------------------------------------------------
 // UPDATE PROFILE
+// -------------------------------------------------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'update') {
     if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
         $error = 'Invalid CSRF token.';
