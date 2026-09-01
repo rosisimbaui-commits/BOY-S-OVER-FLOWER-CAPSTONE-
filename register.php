@@ -1,4 +1,4 @@
-<?php
+ <?php
 require_once '../includes/db.php';
 startSecureSession();
 
@@ -93,19 +93,19 @@ $csrf = generateCSRFToken();
         <div class="grid-2">
             <div class="form-group">
                 <label>Username *</label>
-                <input type="text" name="username" required maxlength="50" placeholder="johndoe"
+                <input type="text" name="username" required maxlength="50" placeholder="Username"
                        value="<?= htmlspecialchars($_POST['username'] ?? '') ?>">
             </div>
             <div class="form-group">
                 <label>Full Name</label>
-                <input type="text" name="full_name" maxlength="200" placeholder="John Doe"
+                <input type="text" name="full_name" maxlength="200" placeholder="Fullname"
                        value="<?= htmlspecialchars($_POST['full_name'] ?? '') ?>">
             </div>
         </div>
 
         <div class="form-group">
             <label>Email Address *</label>
-            <input type="email" name="email" required maxlength="255" placeholder="john@example.com"
+            <input type="email" name="email" required maxlength="255" placeholder="Email"
                    value="<?= htmlspecialchars($_POST['email'] ?? '') ?>">
         </div>
 
