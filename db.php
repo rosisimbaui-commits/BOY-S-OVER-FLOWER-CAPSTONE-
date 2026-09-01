@@ -1,11 +1,13 @@
 <?php
+// ============================================================
 // DATABASE CONFIGURATION
+// ============================================================
 define('DB_HOST', 'localhost');
 define('DB_USER', 'root');
 define('DB_PASS', '');
-define('DB_NAME', 'secureshops');
+define('DB_NAME', 'secureshop');
 // CRITICAL: If you change this key, all previously encrypted emails will be unreadable!
-define('ENCRYPTION_KEY', 'SecureShops_AES_Key_2024!@#$%^&*()');
+define('ENCRYPTION_KEY', 'SecureShop_AES_Key_2024!@#$%^&*()');
 
 function getDB() {
     static $db = null;
@@ -18,7 +20,10 @@ function getDB() {
     }
     return $db;
 }
+
+// ============================================================
 // ENCRYPTION HELPERS (AES-256-CBC)
+// ============================================================
 function encryptData($data) {
     if ($data === null || $data === '') return '';
     $iv = openssl_random_pseudo_bytes(16);
@@ -38,7 +43,10 @@ function decryptData($data) {
     [$iv, $encrypted] = $parts;
     return openssl_decrypt($encrypted, 'AES-256-CBC', ENCRYPTION_KEY, 0, $iv);
 }
+
+// ============================================================
 // INPUT SANITIZATION
+// ============================================================
 function sanitizeInput($input) {
     $input = trim($input);
     $input = stripslashes($input);
@@ -49,7 +57,10 @@ function sanitizeInput($input) {
 function sanitizeEmail($email) {
     return filter_var(trim($email), FILTER_SANITIZE_EMAIL);
 }
+
+// ============================================================
 // PASSWORD VALIDATION
+// ============================================================
 function validatePassword($password) {
     if (strlen($password) < 8) return false;
     if (!preg_match('/[A-Za-z]/', $password)) return false;
@@ -64,7 +75,10 @@ function hashPassword($password) {
 function verifyPassword($password, $hash) {
     return password_verify($password, $hash);
 }
+
+// ============================================================
 // SESSION HELPERS
+// ============================================================
 function startSecureSession() {
     if (session_status() === PHP_SESSION_NONE) {
         session_set_cookie_params([
@@ -93,7 +107,10 @@ function requireUserLogin() {
         exit;
     }
 }
+
+// ============================================================
 // CSRF TOKEN
+// ============================================================
 function generateCSRFToken() {
     startSecureSession();
     if (empty($_SESSION['csrf_token'])) {
@@ -110,6 +127,12 @@ function verifyCSRFToken($token) {
     return true;
 }
 
+// ============================================================
+// OTP GENERATOR
+// ============================================================
+function generateOTP() {
+    return str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+}
 
 // ============================================================
 // FLASH MESSAGES
