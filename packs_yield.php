@@ -1,37 +1,32 @@
-<?php
+ <?php
+// 1. Database Connection & Requirements
 require_once '../includes/db.php';
 requireUserLogin(); 
 
 $db = getDB();
-$message = "";
+$error = '';
+$success = '';
 
-// --- SAFETY CHECK ---
-$db->query("CREATE TABLE IF NOT EXISTS pack_yields (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    batch_id INT NOT NULL,
-    user_id INT NOT NULL,
-    actual_grams DECIMAL(10,2) NOT NULL,
-    total_packs_produced INT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
-
-// 1. HANDLE FORM SUBMISSION
+// 2. Handle Form Submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['log_yield'])) {
     $batchId = (int)$_POST['batch_id'];
     $gramsArray = $_POST['actual_grams'] ?? [];
     $qtyArray = $_POST['pack_qty'] ?? [];
+    
+    // Capture the current logged-in User ID from the session
     $userId = $_SESSION['user_id'] ?? 0; 
     
     if ($batchId > 0 && !empty($gramsArray)) {
         $successCount = 0;
-        $stmt = $db->prepare("INSERT INTO pack_yields (batch_id, user_id, actual_grams, total_packs_produced) VALUES (?, ?, ?, ?)");
+        
+        $stmt = $db->prepare("INSERT INTO production_yields (batch_id, user_id, actual_grams, total_packs_produced) VALUES (?, ?, ?, ?)");
         
         foreach ($gramsArray as $index => $grams) {
             $gramsValue = (float)$grams;
             $qtyValue = (int)$qtyArray[$index];
 
             if ($gramsValue > 0 && $qtyValue > 0) {
-                $stmt->bind_param("iiii", $batchId, $userId, $gramsValue, $qtyValue);
+                $stmt->bind_param("iidi", $batchId, $userId, $gramsValue, $qtyValue);
                 if ($stmt->execute()) { 
                     $successCount++; 
                 }
@@ -39,17 +34,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['log_yield'])) {
         }
         
         if ($successCount > 0) {
-            $message = "<div class='alert success'>✅ $successCount entries logged successfully!</div>";
+            header("Location: " . $_SERVER['PHP_SELF'] . "?success=" . $successCount);
+            exit();
+        } else {
+            $error = "No valid pack variants were filled out.";
         }
     } else {
-        $message = "<div class='alert' style='background:rgba(231,76,60,0.1); color:#e74c3c;'>❌ Please fill in all fields correctly.</div>";
+        $error = "Invalid form submission configuration.";
     }
 }
 
-// 2. FETCH BATCHES
+if (isset($_GET['success'])) {
+    $success = htmlspecialchars($_GET['success']) . " pack yield entries logged successfully!";
+}
+
+// 3. FETCH BATCHES FOR THE DROPDOWN
 $batches = $db->query("SELECT id, batch_number, product_name FROM production_batches ORDER BY production_datetime DESC");
 
-// 3. FETCH HISTORY
+// 4. FETCH COMBINED HISTORY
 $historyQuery = "SELECT 
                     pb.batch_number, 
                     pb.product_name, 
@@ -57,11 +59,10 @@ $historyQuery = "SELECT
                     py.total_packs_produced, 
                     py.created_at,
                     u.username as logged_by
-                 FROM pack_yields py
+                 FROM production_yields py
                  JOIN production_batches pb ON py.batch_id = pb.id
                  LEFT JOIN users u ON py.user_id = u.id
-                 ORDER BY py.created_at DESC LIMIT 50";
-
+                 ORDER BY py.created_at DESC LIMIT 30";
 $yieldLogs = $db->query($historyQuery);
 ?>
 
@@ -69,157 +70,147 @@ $yieldLogs = $db->query($historyQuery);
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Aldi Foods | Packs Yield Tracker</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Packed Yields Tracker — ALDiFOODS</title>
     <link rel="stylesheet" href="../assets/css/style.css">
-    <style>
-        :root { 
-            --bg-main: #f5f6fa; 
-            --card-bg: #ffffff; 
-            --text-main: #111111; 
-            --primary-orange: #e67e22; 
-            --muted-text: #666666; 
-            --border-color: #dddddd; 
-            --input-bg: #ffffff; 
-        }
-        body { background: var(--bg-main); color: var(--text-main); font-family: 'Inter', sans-serif; margin: 0; display: flex; }
-        .layout { display: flex; width: 100%; min-height: 100vh; }
-        .main-content { flex: 1; padding: 40px; overflow-y: auto; }
-        h1 { color: var(--text-main); margin-bottom: 5px; }
-        .title-subtext { color: var(--muted-text); font-size: 0.95rem; margin-top: 0; margin-bottom: 30px; font-weight: 500; }
+    <style> 
+        .input-row { display: grid; grid-template-columns: 1fr; gap: 20px; margin-bottom: 25px; }
+        .yield-item { display: grid; grid-template-columns: 2fr 1fr auto; gap: 10px; margin-bottom: 12px; align-items: center; }
+        .yield-item input { margin-bottom: 0; }
+        .remove-btn { color: #e74c3c; cursor: pointer; border: none; background: none; font-size: 1.4rem; padding: 0 10px; line-height: 1; }
         
-        /* Glass Card Titles */
-        .glass-card { background: var(--card-bg); border-radius: 12px; padding: 25px; margin-bottom: 30px; border: 1px solid var(--border-color); box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
-        .section-title { font-weight: 700; color: var(--text-main); border-left: 4px solid var(--primary-orange); padding-left: 15px; margin-bottom: 25px; text-transform: uppercase; }
-        .orange-text { color: var(--primary-orange); }
-        
-        /* Pack Metrics Configuration Title - Set to Black */
-        .config-header { font-size: 0.85rem; font-weight: 800; color: var(--text-main); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 15px; display: block; }
-        
-        /* Grid Fields Setup */
-        .yield-row-header { display: grid; grid-template-columns: 1fr 1fr 50px; gap: 15px; margin-bottom: 10px; }
-        .yield-row { display: grid; grid-template-columns: 1fr 1fr 50px; gap: 15px; margin-bottom: 10px; align-items: center; }
-        
-        .input-group label { font-size: 0.7rem; color: var(--muted-text); text-transform: uppercase; margin-bottom: 8px; display: block; }
-        input, select { padding: 12px; border: 1px solid var(--border-color); background: var(--input-bg); color: var(--text-main); border-radius: 8px; width: 100%; box-sizing: border-box; }
-        input::placeholder { color: #aaa; }
-        
-        /* Button Variants Styles */
-        .btn-add { background: transparent; color: var(--text-main); border: 1px dashed var(--border-color); padding: 10px; border-radius: 8px; cursor: pointer; width: 100%; margin-bottom: 20px; font-weight: 600; }
-        .btn-add:hover { background: #f9f9f9; border-color: var(--muted-text); }
-        .btn-remove { background: #e74c3c; color: white; border: none; padding: 12px; border-radius: 8px; cursor: pointer; height: 42px; }
-        .btn-save { background: var(--primary-orange); color: #fff; padding: 14px; border-radius: 8px; border: none; font-weight: 700; cursor: pointer; width: 100%; }
-
-        /* Tables Data Format styling */
-        .data-table { width: 100%; border-collapse: collapse; }
-        .data-table th { text-align: left; color: var(--muted-text); padding: 15px; border-bottom: 2px solid var(--border-color); font-size: 0.7rem; text-transform: uppercase; }
-        .data-table td { padding: 12px 15px; border-bottom: 1px solid #eeeeee; font-size: 0.9rem; color: var(--text-main); }
-        
-        .batch-header-row { background: rgba(230, 126, 34, 0.05); }
-        .batch-tag { color: var(--primary-orange); font-weight: 800; font-size: 0.9rem; }
-        .pack-item { color: #333333; border-left: 2px solid var(--primary-orange); padding-left: 10px; }
-        
-        .user-badge { font-size: 0.7rem; color: var(--muted-text); background: #f0f0f0; padding: 3px 8px; border-radius: 4px; border: 1px solid var(--border-color); }
-        .alert { padding: 15px; border-radius: 6px; margin-bottom: 20px; font-size: 0.9rem; font-weight: 600; }
-        .alert.success { background: rgba(230, 126, 34, 0.1); color: var(--primary-orange); border: 1px solid rgba(230, 126, 34, 0.2); }
+        /* Contextual visual treatments for layout alignment */
+        .batch-header-row { background: rgba(255, 255, 255, 0.02); }
+        .pack-item-border { border-left: 2px solid var(--accent); padding-left: 10px; margin-left: 5px; }
+        .user-badge { font-size: 0.75rem; color: var(--text-muted); background: rgba(255,255,255,0.03); padding: 3px 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.05); }
     </style>
 </head>
 <body>
-
 <div class="layout">
     <?php include '_sidebar.php'; ?>
-
+    
     <div class="main-content">
-        <h1>Packed <span class="orange-text">Yields</span></h1>
-        <p class="title-subtext">Log finishing metrics and output configurations per item batch</p>
-        
-        <?= $message ?>
-
-        <div class="glass-card">
-            <h3 class="section-title">Log Packing Results</h3>
-            <form method="POST">
-                <div class="input-group" style="margin-bottom: 25px; max-width: 400px;">
-                    <label>Active Production Batch</label>
-                    <select name="batch_id" required>
-                        <option value="">-- Choose batch --</option>
-                        <?php while($b = $batches->fetch_assoc()): ?>
-                            <option value="<?= $b['id'] ?>"><?= htmlspecialchars($b['batch_number']) ?> - <?= htmlspecialchars($b['product_name']) ?></option>
-                        <?php endwhile; ?>
-                    </select>
-                </div>
-
-                <div id="rowContainer">
-                    <span class="config-header">PACK METRICS CONFIGURATION</span>
-                    <div class="yield-row-header">
-                        <label style="font-size: 0.7rem; color: var(--muted-text); text-transform: uppercase;">Actual (Grams/Pack)</label>
-                        <label style="font-size: 0.7rem; color: var(--muted-text); text-transform: uppercase;">Qty Packed (Units)</label>
-                        <div></div>
-                    </div>
-
-                    <div class="yield-row">
-                        <div class="input-group">
-                            <input type="number" name="actual_grams[]" step="0.01" placeholder="e.g. 500" required>
-                        </div>
-                        <div class="input-group">
-                            <input type="number" name="pack_qty[]" placeholder="e.g. 100" required>
-                        </div>
-                        <div></div>
-                    </div>
-                </div>
-
-                <button type="button" class="btn-add" onclick="addRow()">+ Add Different Pack Size</button>
-                <button type="submit" name="log_yield" class="btn-save">Save All Packs</button>
-            </form>
+        <!-- PAGE HEADER -->
+        <div class="page-header">
+            <div>
+                <h1>Packed <span class="text-accent">Yields</span></h1>
+                <div class="breadcrumb">Log finishing metrics and output configurations per item batch</div>
+            </div>
         </div>
 
-        <div class="glass-card">
-            <h3 class="section-title">🕒 Combined <span class="orange-text">Yield</span> History</h3>
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th style="width: 35%;">Batch & Product</th>
-                        <th style="width: 45%;">Pack Variations</th>
-                        <th style="width: 20%;">Logged By</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php 
-                    $currentBatch = null;
-                    if($yieldLogs && $yieldLogs->num_rows > 0): 
-                        while($log = $yieldLogs->fetch_assoc()): 
-                            $batchKey = $log['batch_number'] . $log['created_at']; 
-                            if ($currentBatch !== $batchKey): 
-                                $currentBatch = $batchKey;
-                    ?>
-                            <tr class="batch-header-row">
-                                <td>
-                                    <span class="batch-tag">#<?= htmlspecialchars($log['batch_number']) ?></span><br>
-                                    <small style="font-weight:600; color: #111111;"><?= htmlspecialchars($log['product_name']) ?></small>
-                                </td>
-                                <td></td>
-                                <td>
-                                    <small style="color:#666; font-weight: 500;"><?= date('M d, H:i', strtotime($log['created_at'])) ?></small>
-                                </td>
-                            </tr>
-                    <?php endif; ?>
+        <!-- NOTIFICATION ALERTS -->
+        <?php if ($error):   ?><div class="alert alert-danger"><?= htmlspecialchars($error) ?></div><?php endif; ?>
+        <?php if ($success): ?><div class="alert alert-success"><?= htmlspecialchars($success) ?></div><?php endif; ?>
+
+        <!-- STACKED LAYOUT (VERTICAL DIRECTION) -->
+        <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+            
+            <!-- PACKING RESULTS CARD FORM (TOP) -->
+            <div class="table-card">
+                <div class="table-card-header">
+                    <h3>Log Packing Results</h3>
+                </div>
+                <div style="padding: 1.5rem;">
+                    <form method="POST" id="yieldForm">
+                        <div class="input-row">
+                            <div class="form-group">
+                                <label style="font-weight: 600; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em;">Active Production Batch</label>
+                                <select name="batch_id" required>
+                                    <option value="">-- Choose batch --</option>
+                                    <?php while($b = $batches->fetch_assoc()): ?>
+                                        <option value="<?= $b['id'] ?>"><?= htmlspecialchars($b['batch_number']) ?> - <?= htmlspecialchars($b['product_name']) ?></option>
+                                    <?php endwhile; ?>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label style="font-weight: 600; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; margin-bottom: 12px; display: block;">Pack Metrics Configuration</label>
+                            <div id="rowContainer">
+                                <div class="yield-item">
+                                    <input type="number" name="actual_grams[]" step="0.01" placeholder="Actual Weight (e.g. 500g)" required>
+                                    <input type="number" name="pack_qty[]" placeholder="Quantity Packed Units" required>
+                                    <div style="width: 44px;"></div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <button type="button" class="btn btn-outline btn-sm" style="width: 100%; justify-content: center; margin-top: 5px;" onclick="addRow()">+ Add Different Pack Size</button>
+                        
+                        <div style="margin-top: 30px; text-align: right;">
+                            <button type="submit" name="log_yield" class="btn btn-primary">Save All Packs</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- COMBINED YIELD HISTORY DATA CARD (BOTTOM) -->
+            <div class="table-card">
+                <div class="table-card-header">
+                    <h3>Combined Yield History</h3>
+                    <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 500; float: right; margin-top: -20px;">
+                        Showing last 24 hours
+                    </span>
+                </div>
+                <div style="overflow-x: auto;">
+                    <table class="data-table">
+                        <thead>
                             <tr>
-                                <td></td>
-                                <td>
-                                    <div class="pack-item">
-                                        <strong><?= number_format($log['actual_grams'], 1) ?>g</strong> 
-                                        &nbsp;&rarr;&nbsp; 
-                                        <?= number_format($log['total_packs_produced']) ?> Units
-                                    </div>
-                                </td>
-                                <td>
-                                    <span class="user-badge">👤 <?= htmlspecialchars($log['logged_by'] ?? 'Unknown User') ?></span>
-                                </td>
+                                <th style="font-weight: 600; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; width: 30%;">Batch & Product</th>
+                                <th style="font-weight: 600; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; width: 30%;">Pack Variations</th>
+                                <th style="font-weight: 600; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; width: 30%;">Logged By</th>
                             </tr>
-                        <?php endwhile; ?>
-                    <?php else: ?>
-                        <tr><td colspan="3" style="text-align:center; color:var(--muted-text); padding: 50px;">No yield data recorded.</td></tr>
-                    <?php endif; ?>
-                </tbody>
-            </table>
+                        </thead>
+                        <tbody>
+                            <?php 
+                            $currentBatchKey = null;
+                            if($yieldLogs && $yieldLogs->num_rows > 0): 
+                                while($log = $yieldLogs->fetch_assoc()): 
+                                    $batchGroupKey = $log['batch_number'] . '_' . $log['created_at']; 
+                                    
+                                    if ($currentBatchKey !== $batchGroupKey): 
+                                        $currentBatchKey = $batchGroupKey;
+                            ?>
+                                    <!-- Contextual Meta Header Row -->
+                                    <tr class="batch-header-row">
+                                        <td colspan="3" style="padding-top: 15px; padding-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                            <span style="font-weight: 700; color: var(--accent); margin-right: 10px;">#<?= htmlspecialchars($log['batch_number']) ?></span> 
+                                            <span style="font-weight: 600; color: var(--text);"><?= htmlspecialchars($log['product_name']) ?></span>
+                                            <span style="font-size: 0.8rem; color: var(--text-muted); float: right; margin-right: 1px; font-weight: 500;">
+                                                <?= date('M d, Y — h:i A', strtotime($log['created_at'])) ?>
+                                            </span>
+                                        </td>
+                                    </tr>
+                                    <?php endif; ?>
+                                    
+                                    <!-- Pack Variant Data Item Row -->
+                                    <tr>
+                                        <td></td> 
+                                        <td>
+                                            <div class="pack-item-border" style="font-size: 0.85rem; color: var(--text);">
+                                                <strong><?= number_format($log['actual_grams'], 1) ?>g</strong> 
+                                                <span style="color: var(--text-muted); margin: 0 8px;">&rarr;</span> 
+                                                <span style="font-weight: 600;"><?= number_format($log['total_packs_produced']) ?></span> Units
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <span class="user-badge"><?= htmlspecialchars($log['logged_by'] ?? 'Unknown User') ?></span>
+                                        </td>
+                                    </tr>
+                                <?php endwhile; ?>
+                            <?php else: ?>
+                                <tr>
+                                    <td colspan="3" style="text-align: center; padding: 3rem;" class="text-muted">
+                                        <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">⏱️</div>
+                                        No logs recorded in the last 24 hours.
+                                    </td>
+                                </tr>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
         </div>
     </div>
 </div>
@@ -228,15 +219,14 @@ $yieldLogs = $db->query($historyQuery);
 function addRow() {
     const container = document.getElementById('rowContainer');
     const newRow = document.createElement('div');
-    newRow.className = 'yield-row';
+    newRow.className = 'yield-item';
     newRow.innerHTML = `
-        <div class="input-group"><input type="number" name="actual_grams[]" step="0.01" placeholder="Grams" required></div>
-        <div class="input-group"><input type="number" name="pack_qty[]" placeholder="Quantity" required></div>
-        <button type="button" class="btn-remove" onclick="this.parentElement.remove()">×</button>
+        <input type="number" name="actual_grams[]" step="0.01" placeholder="Actual Weight (Grams)" required>
+        <input type="number" name="pack_qty[]" placeholder="Quantity Units" required>
+        <button type="button" class="remove-btn" onclick="this.parentElement.remove()">×</button>
     `;
     container.appendChild(newRow);
 }
 </script>
-
 </body>
 </html>
