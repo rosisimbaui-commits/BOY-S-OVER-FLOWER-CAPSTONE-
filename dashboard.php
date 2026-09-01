@@ -24,7 +24,7 @@ $recentUsers  = $db->query('SELECT id, username, email, created_at FROM users OR
     <div class="page-header">
         <div>
             <h1>Dashboard</h1>
-            <div class="breadcrumb">Overview of your admin</div>
+            <div class="breadcrumb">Overview of your store</div>
         </div>
         <div style="font-size:.82rem; color:var(--muted)"><?= date('l, F j, Y') ?></div>
     </div>
